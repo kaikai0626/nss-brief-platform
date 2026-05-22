@@ -431,10 +431,51 @@ input[type="file"]{padding:8px;background:var(--gray-50);border:1.5px dashed var
 
 <script>
 const DB_KEY='collab_platform_v3_nss_brief_platform';
-function loadDB(){const def={tasks:[],briefs:[],contents:[],users:[],userTasks:[]};try{const d=JSON.parse(localStorage.getItem(DB_KEY));if(!d)return def;// 补全缺失字段，防止旧数据没有某些 key
-return Object.assign({},def,d);}catch(e){return def;}}
-function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db));}
+const API_BASE='https://nss-brief-api.hekaiwen1.workers.dev';
+
+// 内存缓存，避免每次操作都请求网络
+let _dbCache=null;
+
+async function loadDBAsync(){
+  if(_dbCache)return _dbCache;
+  const def={tasks:[],briefs:[],contents:[],users:[],userTasks:[]};
+  try{
+    const r=await fetch(API_BASE+'/api/db?key='+encodeURIComponent(DB_KEY));
+    const j=await r.json();
+    if(j.value){_dbCache=Object.assign({},def,JSON.parse(j.value));return _dbCache;}
+  }catch(e){}
+  _dbCache=def;return _dbCache;
+}
+async function saveDBAsync(db){
+  _dbCache=db;
+  try{
+    await fetch(API_BASE+'/api/db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:DB_KEY,value:JSON.stringify(db)})});
+  }catch(e){console.warn('saveDB failed',e);}
+}
+
+// 同步兼容层（内部用，依赖缓存）
+function loadDB(){const def={tasks:[],briefs:[],contents:[],users:[],userTasks:[]};if(_dbCache)return _dbCache;return def;}
+function saveDB(db){saveDBAsync(db);}
 function getDB(){return loadDB();}
+
+// 页面启动时预加载数据
+(async function preload(){
+  showLoadingOverlay(true);
+  await loadDBAsync();
+  showLoadingOverlay(false);
+})();
+
+function showLoadingOverlay(show){
+  let el=document.getElementById('loadingOverlay');
+  if(!el){
+    el=document.createElement('div');
+    el.id='loadingOverlay';
+    el.style.cssText='position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:9999;display:flex;align-items:center;justify-content:center;font-size:16px;color:#6b7280;';
+    el.innerHTML='<div style="text-align:center"><div style="font-size:32px;margin-bottom:12px">⏳</div>加载数据中...</div>';
+    document.body.appendChild(el);
+  }
+  el.style.display=show?'flex':'none';
+}
 
 let currentRole=null,currentCreatorUser=null,pendingJoinTaskId=null,pendingApproveBriefId=null,pendingRejectBriefId=null,pendingRejectRole=null,_pendingBriefData=null,currentCreatorTaskId=null;
 
