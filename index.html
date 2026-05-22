@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -521,6 +522,27 @@ function toggleGroup(id){var el=document.getElementById(id);if(!el)return;var hi
 function badgeClass(status){const m={pending:'badge badge-pending',op_approved:'badge badge-op-approved',approved:'badge badge-approved',rejected:'badge badge-rejected',vendor_rejected:'badge badge-rejected'};return m[status]||'badge';}
 function toast(msg,type){const c=document.getElementById('toastContainer');const t=document.createElement('div');t.className='toast '+(type||'');const icons={success:'✅',error:'❌',info:'ℹ️'};t.innerHTML='<span>'+(icons[type]||'💬')+'</span> '+msg;c.appendChild(t);setTimeout(()=>t.remove(),3000);}
 document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');});});
+
+// ── Hash 路由：#operator / #vendor / #creator 直接进入对应端 ──
+(function initHashRoute(){
+  const hash = location.hash.replace('#','').toLowerCase();
+  if(hash==='operator'){
+    // 运营端：正常进入密码页，保留首页入口
+    enterRole('operator');
+  } else if(hash==='vendor'){
+    // 厂商端：进入密码页，退出只回密码页（不回首页）
+    currentRole='vendor';
+    document.getElementById('authTitle').textContent='厂商审核台';
+    document.getElementById('authSubtitle'||'subtitle').textContent='请输入访问密码';
+    showScreen('auth');
+    // 隐藏 topbar 首页按钮
+    document.getElementById('topbarRight').innerHTML='';
+  } else if(hash==='creator'){
+    // 作者端：直接进创作者登录页，topbar 无首页入口
+    showScreen('creator-login');
+    document.getElementById('topbarRight').innerHTML='';
+  }
+})();
 </script>
 
 </body>
