@@ -436,21 +436,40 @@ const API_BASE='https://nss-brief-api.hekaiwen1.workers.dev';
 // 内存缓存，避免每次操作都请求网络
 let _dbCache=null;
 
+const LS_KEY=DB_KEY+'_local';
+function lsLoad(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d)return d;}catch(e){}return null;}
+function lsSave(db){try{localStorage.setItem(LS_KEY,JSON.stringify(db));}catch(e){}}
+
+async function fetchWithTimeout(url,opts={},ms=8000){
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(),ms);
+  try{const r=await fetch(url,{...opts,signal:ctrl.signal});clearTimeout(t);return r;}
+  catch(e){clearTimeout(t);throw e;}
+}
+
 async function loadDBAsync(){
   if(_dbCache)return _dbCache;
   const def={tasks:[],briefs:[],contents:[],users:[],userTasks:[]};
   try{
-    const r=await fetch(API_BASE+'/api/db?key='+encodeURIComponent(DB_KEY));
+    const r=await fetchWithTimeout(API_BASE+'/api/db?key='+encodeURIComponent(DB_KEY),{},6000);
     const j=await r.json();
-    if(j.value){_dbCache=Object.assign({},def,JSON.parse(j.value));return _dbCache;}
-  }catch(e){}
-  _dbCache=def;return _dbCache;
+    if(j.value){
+      const remote=Object.assign({},def,JSON.parse(j.value));
+      _dbCache=remote;lsSave(remote);return _dbCache;
+    }
+  }catch(e){console.warn('云端加载失败，降级本地缓存',e);}
+  // 降级：用 localStorage 本地缓存
+  const local=lsLoad();
+  _dbCache=local?Object.assign({},def,local):def;
+  return _dbCache;
 }
+
 async function saveDBAsync(db){
   _dbCache=db;
+  lsSave(db); // 先写本地，保证即时可用
   try{
-    await fetch(API_BASE+'/api/db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:DB_KEY,value:JSON.stringify(db)})});
-  }catch(e){console.warn('saveDB failed',e);}
+    await fetchWithTimeout(API_BASE+'/api/db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:DB_KEY,value:JSON.stringify(db)})},8000);
+  }catch(e){console.warn('云端同步失败，数据已保存本地',e);}
 }
 
 // 同步兼容层（内部用，依赖缓存）
@@ -477,7 +496,8 @@ function onAppReady(fn){if(_appReady)fn();else _appReadyCallbacks.push(fn);}
 
 (async function preload(){
   showLoadingOverlay(true);
-  await loadDBAsync();
+  // 最多等 5 秒，超时直接放行
+  await Promise.race([loadDBAsync(), new Promise(r=>setTimeout(r,5000))]);
   showLoadingOverlay(false);
   _appReady=true;
   _appReadyCallbacks.forEach(fn=>fn());
